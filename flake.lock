@@ -3,15 +3,16 @@
     "flclashx-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1784673399,
-        "narHash": "sha256-Mdi3C25lPo0p+7vV8YRa3zOM6zkOdxn/r477yMK50tA=",
+        "lastModified": 1794967214,
+        "narHash": "sha256-j3e4T2Lw7g0d1t8zK7uIKxymU4yWtRqETj9VIzjbBZU=",
         "owner": "pluralplay",
         "repo": "FlClashX",
-        "rev": "dc77f6f9714958403e2bd7ccbe8bcac6f80855bb",
+        "rev": "ee0160c908d31e0f82af3ed0df40c68aca2e261c",
         "type": "github"
       },
       "original": {
         "owner": "pluralplay",
+        "ref": "v0.5.8",
         "repo": "FlClashX",
         "type": "github"
       }
