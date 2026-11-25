@@ -391,6 +391,17 @@
         let
           cfg = config.programs.flclashx;
 
+          # Bind the package once: the app and the helper must come from the
+          # same store path. The app computes the expected helper path as
+          # dirname(resolvedExecutable)/FlClashXHelperService and rejects a
+          # helper that reports another path ("helper executable path
+          # mismatch"), falling back to an unprivileged core. Using cfg.package
+          # for the unit and the overridden package for systemPackages gave two
+          # different paths whenever wayland.enable was on.
+          appPackage = cfg.package.override {
+            waylandBackend = cfg.wayland.enable;
+          };
+
           # Only one normal user -> no ambiguity, infer the owner.
           normalUsers = lib.attrNames (
             lib.filterAttrs (_: user: user.isNormalUser or false) config.users.users
@@ -422,7 +433,7 @@
           helperStartScript = pkgs.writeShellScript "flclashx-helper-start" ''
             export FLCLASH_HELPER_OWNER_UID="$(${pkgs.coreutils}/bin/id -u ${lib.escapeShellArg ownerName})"
             export FLCLASH_HELPER_OWNER_GID="$(${pkgs.coreutils}/bin/id -g ${lib.escapeShellArg ownerName})"
-            exec ${cfg.package}/app/flclashx/${helperName}
+            exec ${appPackage}/app/flclashx/${helperName}
           '';
 
           helperSocketGroupScript = pkgs.writeShellScript "flclashx-helper-socket-group" ''
@@ -444,7 +455,12 @@
               type = lib.types.package;
               default = self.packages.${pkgs.stdenv.hostPlatform.system}.flclashx;
               defaultText = lib.literalExpression "flclashx.packages.\${system}.flclashx";
-              description = "The FlClashX package to use.";
+              description = ''
+                The FlClashX package to use. It must accept the
+                `waylandBackend` argument (the module calls `override` to force
+                the Wayland backend), and its bundle must contain the helper
+                next to the app binary.
+              '';
             };
 
             wayland.enable = lib.mkEnableOption ''
@@ -502,11 +518,7 @@
               }
             ];
 
-            environment.systemPackages = [
-              (cfg.package.override {
-                waylandBackend = cfg.wayland.enable;
-              })
-            ];
+            environment.systemPackages = [ appPackage ];
 
             systemd.services.flclashx-helper = lib.mkIf (cfg.tunMode.enable && owner != null) {
               description = "FlClashX helper (starts the core for TUN mode)";

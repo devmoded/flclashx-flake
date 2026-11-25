@@ -208,7 +208,13 @@ pubspecLock = lock // { sdks = lock.sdks // { dart = ">=3.10.0 <4.0.0"; }; };
 - Юнит `flclashx-helper` создаётся только при `tunMode.enable && owner != null`:
   - `ExecStart` — shell-скрипт, который в **рантайме** делает
     `id -u`/`id -g` для owner, экспортирует `FLCLASH_HELPER_OWNER_UID/GID` и
-    делает `exec ${pkg}/app/flclashx/FlClashXHelperService`;
+    делает `exec ${appPackage}/app/flclashx/FlClashXHelperService`;
+  - `appPackage` — `cfg.package.override { waylandBackend = cfg.wayland.enable; }`,
+    посчитанный **один раз** в `let`: приложение ищет helper по пути
+    `dirname(resolvedExecutable)/FlClashXHelperService` и отвергает helper из
+    другого store-пути (`helper executable path mismatch`), после чего
+    запускает ядро без привилегий. Поэтому `systemPackages` и юнит обязаны
+    брать один и тот же пакет;
   - `Group = ownerGroup` (иначе helper создаст сокет с группой root и
     приложение не подключится);
   - `RuntimeDirectory = flclashx`, `RuntimeDirectoryMode = 0755`;
