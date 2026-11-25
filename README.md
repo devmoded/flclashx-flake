@@ -5,7 +5,8 @@
 авторами FlClashX. Текущая версия — **0.5.8**.
 
 > [!NOTE]
-> Этот flake был написан с помощью Claude Sonnet 5.5 High.
+> Flake для FlClashX 0.4.x написан с помощью Claude Sonnet 5.5 High.
+> Порт на 0.5.8 выполнен с помощью DeepSeek v4.1 Flash.
 
 ## Требования
 
@@ -63,12 +64,12 @@ programs.flclashx.tunMode.user = "alice";
 | Опция                                 | По умолчанию   | Описание                                                          |
 | ------------------------------------- | -------------- | ----------------------------------------------------------------- |
 | `enable`                              | `false`        | Установить FlClashX                                               |
-| `package`                             | пакет из flake | Использовать другой пакет                                         |
+| `package`                             | пакет из flake | Другой пакет (должен принимать `waylandBackend`)                  |
 | `wayland.enable`                      | `false`        | Принудительно `GDK_BACKEND=wayland`                               |
 | `tunMode.enable`                      | `false`        | Включить root-сервис `flclashx-helper` для TUN                    |
 | `tunMode.user`                        | авто           | Владелец TUN-сессии (единственный нормальный пользователь)        |
 | `tunMode.exemptFromReversePathFilter` | `true`         | Исключить TUN-интерфейс из проверки обратного пути фаервола       |
-| `tunMode.interfaceName`               | `FlClashX`     | Имя TUN-интерфейса                                                |
+| `tunMode.interfaceName`               | `FlClashX`     | Имя TUN-устройства для правила rpfilter (как в настройках приложения) |
 
 ## Как работает TUN в 0.5.x
 
@@ -87,6 +88,10 @@ programs.flclashx.tunMode.user = "alice";
 - Helper сам сбрасывает привилегии перед запуском ядра и проверяет SHA-256
   ядра по `manifest.json`, встроенному в пакет. Поэтому ядро нельзя
   strip/patchelf — этот flake собирает его с `dontStrip`/`dontPatchELF`.
+- Приложение и helper устанавливаются из одного store-пути. Приложение ищет
+  helper рядом со своим бинарником и отвергает helper из другого пути, после
+  чего запускает ядро без привилегий. Поэтому при замене `package` нужно
+  брать пакет, в котором helper лежит рядом с приложением.
 - В фаервол добавляется правило, исключающее TUN-интерфейс из проверки
   обратного пути (iptables и nftables). Без него DNS под TUN работает очень
   медленно. Отключается через
@@ -96,6 +101,9 @@ programs.flclashx.tunMode.user = "alice";
 всё равно считает (на Linux с systemd), что helper должен существовать, и при
 включении TUN попытается поставить его через `pkexec` — на NixOS это не
 сработает. Включайте `tunMode.enable`.
+
+Если TUN поднимается, но трафик идёт напрямую (IP не меняется), это не
+проблема flake'а — см. [TROUBLESHOOTING.md](TROUBLESHOOTING.md).
 
 ## Обновление
 
@@ -126,10 +134,23 @@ sudo nixos-rebuild switch --flake .#ХОСТ
   переменные окружения GTK из wrapper'а теряются — возможны проблемы с
   GTK-схемами и иконками. Проверяйте после включения.
 - TUN работает только вместе с `programs.flclashx.tunMode.enable`.
+- Правило rpfilter ставится только для backend'ов `iptables` и `nftables`.
+  При `services.firewalld.enable = true` (`networking.firewall.backend =
+  "firewalld"`) правило не добавляется, и DNS под TUN может работать
+  медленно.
 - Платформа — только `x86_64-linux`.
 
 ## Благодарности
 
+- [FlClashX](https://github.com/pluralplay/FlClashX) — upstream-проект
+- [FlClash](https://github.com/chen08209/FlClash) — родительский проект
+- [MetaCubeX/mihomo](https://github.com/MetaCubeX/mihomo) — Go-ядро
+- [MetaCubeX/sing-tun](https://github.com/MetaCubeX/sing-tun) — TUN-стек
+  (в FlClashX используется его форк)
+- [flutter_rust_bridge](https://github.com/fzyzcjy/flutter_rust_bridge) —
+  связка Dart и Rust (`librust_api.so`)
+- [launch_at_startup](https://github.com/chen08209/launch_at_startup) — форк,
+  используемый FlClashX для автозапуска
 - [`flake.nix` из FlClashX PR #118 от endotrizine](https://github.com/pluralplay/FlClashX/pull/118)
 - [`package.nix` клиента Throne из nixpkgs](https://github.com/NixOS/nixpkgs/blob/nixos-26.05/pkgs/by-name/th/throne/package.nix)
 - [`throne.nix` из nixpkgs](https://github.com/NixOS/nixpkgs/blob/nixos-26.05/nixos/modules/programs/throne.nix)
