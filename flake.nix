@@ -249,14 +249,20 @@
             stdenv.cc.cc
           ];
 
-          extraWrapProgramArgs =
-            lib.optionalString waylandBackend "--set GDK_BACKEND wayland"
-            # flutter_rust_bridge opens librust_api.so by bare name
-            # (DynamicLibrary.open('librust_api.so')). The Flutter engine does
-            # have $ORIGIN in its RUNPATH, but keep the bundle's lib/ on
-            # LD_LIBRARY_PATH so this also works if the loader is invoked from
-            # an object without that RUNPATH.
-            + '' --suffix LD_LIBRARY_PATH : "$out/app/flclashx/lib"'';
+          # Space-joined, not concatenated: a leading space inside an indented
+          # string ('' ...'') is stripped as indentation, which glued the two
+          # arguments together ("wayland--suffix") when Wayland was enabled.
+          extraWrapProgramArgs = lib.concatStringsSep " " (
+            lib.optional waylandBackend "--set GDK_BACKEND wayland"
+            ++ [
+              # flutter_rust_bridge opens librust_api.so by bare name
+              # (DynamicLibrary.open('librust_api.so')). The Flutter engine does
+              # have $ORIGIN in its RUNPATH, but keep the bundle's lib/ on
+              # LD_LIBRARY_PATH so this also works if the loader is invoked from
+              # an object without that RUNPATH.
+              "--suffix LD_LIBRARY_PATH : \"$out/app/flclashx/lib\""
+            ]
+          );
 
           # 0.5.x builds core/helper/rust_api from Dart native-asset hooks,
           # which need network and rustup in the sandbox. Disable the hooks and
