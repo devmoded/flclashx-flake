@@ -4,8 +4,9 @@
 Порт с **0.4.2** на **0.5.x** выполнен в ветке `port/0.5.8`; текущая
 закреплённая версия — FlClashX **v0.5.8**.
 
-> **Статус:** порт выполнен, пакет собирается и проходит проверки из §7.
-> Живой прогон GUI/TUN на NixOS-хосте ещё нужен — см. §8.
+> **Статус:** порт выполнен; пакет собирается, проверки из §7 проходят.
+> Живой прогон на NixOS выполнен: GUI стартует (в том числе на Wayland), TUN
+> поднимается, helper запускает ядро. Остались отдельные риски — см. §8.
 
 ---
 
@@ -23,8 +24,9 @@ FlClashX 0.5.x сменил модель привилегий и сборки:
 | `flutter_js` (git)                            | `launch_at_startup` (git), `flutter_js` удалён      |
 
 Рецепт-образец той же архитектуры — **`github:YeFaDa/flclash-nix`**
-(FlClash 0.9.1). Из него взяты общие приёмы, но имена файлов, каталоги и
-часть поведения отличаются — сверяться с upstream, а не копировать слепо.
+(FlClash 0.9.x). Из него взяты общие приёмы, но имена файлов, каталоги,
+версия Flutter и часть поведения отличаются — сверяться с upstream, а не
+копировать слепо.
 
 ---
 
@@ -58,18 +60,20 @@ FlClashX 0.5.x сменил модель привилегий и сборки:
 
 ## 2. Текущее состояние репозитория
 
-- Один файл `flake.nix`: пакет, overlay, NixOS-модуль.
+- `flake.nix` — единственный исходник пакета, overlay и NixOS-модуля.
+- Документация: `README.md` (установка и опции модуля), `AGENTS.md`
+  (этот файл), `TROUBLESHOOTING.md` (проблемы, не связанные с flake'ем —
+  настройки приложения, поведение ядра, особенности сети).
 - `flake.lock`:
   - `nixpkgs` → `02c087f3fe673c9e317f206a627cb6b910336dbe` (nixos-unstable);
   - `flclashx-src` → `pluralplay/FlClashX@ee0160c9...` (`v0.5.8`).
 - Пакеты: `flclashx` (по умолчанию), `flclashx-core`, `flclashx-helper`,
   `flclashx-rust-api`. У приложения есть
   `passthru = { core; helper; rustApi; }`.
-- В закреплённом nixpkgs: `flutter347` = **3.47.4** (Dart 3.13.3),
+- В закреплённом nixpkgs: `flutter347` = **3.47.4** (встроенный Dart 3.13.3),
   `go` = **1.26.9** (`buildGo126Module`), `rustc`/`cargo` = **1.99.0**.
 - Платформа — только `x86_64-linux` (upstream собирает только её; при
   необходимости можно расширять).
-- `README.md` описывает актуальную helper-схему TUN.
 - `LICENSE` — не трогать.
 
 ---
@@ -188,6 +192,9 @@ pubspecLock = lock // { sdks = lock.sdks // { dart = ">=3.10.0 <4.0.0"; }; };
   `harfbuzz`, `libepoxy`, `libayatana-appindicator` (tray), `libx11`
   (`pkg_check_modules(X11 REQUIRED)`). `keybinder3` больше не нужен — хоткеи
   ушли в Rust.
+- `runtimeDependencies`: `libayatana-appindicator` (dlopen из tray_manager) и
+  `stdenv.cc.cc` (libstdc++ для `librust_api.so`). Сборщик Flutter добавляет
+  их в `LD_LIBRARY_PATH` wrapper'а.
 - `postInstall` удаляет из `$out/bin` `FlClashCore`, `FlClashXHelperService` и
   `manifest.json` (сборщик линкует туда все файлы bundle).
 - Desktop entry: `name`/`startupWMClass` = `com.follow.clashx`
@@ -222,10 +229,12 @@ pubspecLock = lock // { sdks = lock.sdks // { dart = ">=3.10.0 <4.0.0"; }; };
   - `Restart = on-failure`, `RestartSec = 5`, лимиты как у upstream.
 - NixOS создаёт `/etc/systemd/system/flclashx-helper.service` — именно этот
   путь проверяет приложение (`helperUnitPathFor`).
-- rpfilter: при `exemptFromReversePathFilter = true` и включённом фаерволе
-  TUN-интерфейс исключается из проверки обратного пути (iptables:
-  `nixos-fw-rpfilter`, nftables: `extraReversePathFilterRules`). Без этого DNS
-  под TUN работает очень медленно.
+- rpfilter: при `exemptFromReversePathFilter = true`, включённом TUN и
+  `networking.firewall.checkReversePath != false` TUN-интерфейс исключается
+  из проверки обратного пути (iptables: `nixos-fw-rpfilter`, nftables:
+  `extraReversePathFilterRules`). Без этого DNS под TUN работает очень
+  медленно. Поддерживаются только backend'ы `iptables` и `nftables`; при
+  `firewalld` правило не ставится.
 - `wayland.enable` прокидывается в пакет через `override { waylandBackend = ...; }`.
 
 ---
@@ -253,8 +262,14 @@ nix build .#flclashx-core
 nix build .#flclashx-helper
 nix build .#flclashx-rust-api
 nix build .#flclashx
-nix flake check          # eval модуля + сборка всех outputs
+nix flake check          # только eval outputs; `checks` не определены
 ```
+
+`nix flake check` не собирает пакеты и не инстанцирует NixOS-модуль: он
+проверяет, что все outputs вычисляются, а `nixosModules.default` — функция.
+Сборка `checks` ничего не делает, потому что этого output в flake нет.
+Сам модуль проверяется только подключением к тестовой конфигурации NixOS
+(`nixos-rebuild build` или `nix eval` на `system.build.toplevel.drvPath`).
 
 Проверено на 0.5.8:
 
@@ -267,16 +282,24 @@ nix flake check          # eval модуля + сборка всех outputs
 - запуск без дисплея доходит до GTK (`cannot open display`), то есть бинарник
   стартует и грузит библиотеки;
 - в `$out/bin` только `FlClashX`;
+- сборка с `waylandBackend = true` и `false`: wrapper содержит раздельные
+  `--set GDK_BACKEND wayland` и `--suffix LD_LIBRARY_PATH ...` (склейка
+  аргументов исправлена в `0cd2869`);
 - NixOS-модуль: eval с одним/двумя пользователями, автоопределение owner,
   assertion при неоднозначности, `Group`, `ExecStart`/`ExecStartPost`,
-  iptables- и nftables-правила.
+  iptables- и nftables-правила; пакет для `systemPackages` и `ExecStart`
+  helper'а — один store-путь в обоих режимах Wayland (`3d2cce6`);
+- живой прогон на NixOS/Wayland: GUI стартует, интерфейс `FlClashX`
+  поднимается, `flclashx-helper` активен, ядро запущено helper'ом с
+  обычными UID/GID и без capabilities.
 
 ---
 
 ## 8. Риски и что проверить на живой системе
 
-1. **TUN end-to-end** — включение TUN, интерфейс `FlClashX`, DNS под TUN,
-   `systemctl status flclashx-helper`, права/группа `/run/flclashx/helper.sock`.
+1. **TUN end-to-end** — базовый сценарий проверен (см. §7). Осталось
+   проверить: DNS под TUN при медленном/блокирующем провайдере, поведение
+   после `systemctl restart flclashx-helper` и после переподключения сети.
 2. **AppImage/не-systemd** — `hasHelperService` в 0.5.x истинно для любого
    Linux с systemd; без юнита приложение уйдёт в `pkexec` и провалится.
    Модуль создаёт юнит только при `tunMode.enable`, так что TUN без модуля
@@ -288,11 +311,14 @@ nix flake check          # eval модуля + сборка всех outputs
    `wrapGAppsHook` (XDG_DATA_DIRS, GIO_EXTRA_MODULES, GDK_PIXBUF_MODULE_FILE)
    потеряются — возможны проблемы с GTK-схемами/иконками. Проверить и, если
    критично, обсудить патч `lib/common/launch.dart` или отдельный autostart.
-4. **Права сокета/группы** — проверить на системе с несколькими
-   пользователями; при нестандартной primary group задать
-   `tunMode.user` явно.
-5. **rpfilter** — проверить оба backend'а фаервола; при проблемах с DNS
-   сравнить с `networking.firewall.trustedInterfaces`.
+4. **Права сокета/группы** — проверено для одного пользователя с группой
+   `users`: сокет `/run/flclashx/helper.sock` создаётся с режимом `0660` и
+   нужной группой. Проверить на системе с несколькими пользователями; при
+   нестандартной primary group задать `tunMode.user` явно.
+5. **rpfilter** — проверены iptables и nftables; для `firewalld` правило не
+   ставится (см. §5). При проблемах с DNS сравнить с
+   `networking.firewall.trustedInterfaces`, а также проверить, что
+   `checkReversePath` не выставлен в `false` (тогда исключение не нужно).
 6. **Strip/манифест** — любой strip/patchelf ядра ломает helper; проверять
    финальный store-путь после изменений в сборке.
 7. **Rust-версия** — upstream пинит канал в `rust-toolchain.toml`; в Nix
@@ -307,15 +333,21 @@ nix flake check          # eval модуля + сборка всех outputs
 - Рецепт-образец: <https://github.com/YeFaDa/flclash-nix>
   - `pkgs/flclash/package.nix`, `modules/flclash.nix`, `pkgs/flclash/update.sh`
 - FlClash (родительский проект): <https://github.com/chen08209/FlClash>
+- Mihomo (Go-ядро): <https://github.com/MetaCubeX/mihomo>
+- sing-tun (TUN-стек, в upstream лежит форк): <https://github.com/MetaCubeX/sing-tun>
 - `flutter_rust_bridge`: <https://github.com/fzyzcjy/flutter_rust_bridge>
+- `launch_at_startup` (форк chen08209): <https://github.com/chen08209/launch_at_startup>
 - AUR-прецедент: PKGBUILD'ы в `.github/aur` upstream.
+- `TROUBLESHOOTING.md` — проблемы, не связанные с flake'ем (например,
+  режим Global и встроенная группа `GLOBAL`).
 - Рабочие заметки (вне репозитория): `~/.opencode/plan/flclashx-0.5-port.md`.
 
 ---
 
 ## 10. Стиль работы
 
-- Язык README/комментариев — русский; код и идентификаторы — английский.
+- Язык README/AGENTS/TROUBLESHOOTING и комментариев — русский; код и
+  идентификаторы — английский.
 - Правки — минимальные и по теме; не переформатировать `flake.nix` целиком.
 - Каждое изменение хэшей сопровождать комментарием, что именно изменилось.
 - Крупные изменения — отдельными коммитами («core/helper/rust_api», «app»,
